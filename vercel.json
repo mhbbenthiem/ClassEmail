@@ -1,9 +1,12 @@
 {
   "routes": [
     { "src": "/api/(.*)", "dest": "api/index.py" },
+
+    { "handle": "filesystem" }, 
     { "src": "/favicon.ico", "dest": "/web/favicon.ico" },
     { "src": "/(.*)\\.(css|js|png|jpg|jpeg|svg|webp)", "dest": "/web/$1.$2" },
+
     { "src": "/", "dest": "/web/index.html" },
-    { "src": "/(.*)", "dest": "/web/index.html" }
+    { "src": "/(.*)", "dest": "/web/$1" }
   ]
 }
