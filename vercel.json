@@ -1,11 +1,14 @@
 {
-  "rewrites": [
-    { "source": "/api/:match*", "destination": "/api/index.py" },
+  "builds": [
+    { "src": "api/index.py", "use": "@vercel/python" },
+    { "src": "web/**", "use": "@vercel/static" }
+  ],
+  "routes": [
+    { "src": "/api/(.*)", "dest": "api/index.py" },
 
-    { "source": "/favicon.ico", "destination": "/web/favicon.ico" },
-    { "source": "/:file*.(css|js|png|jpg|jpeg|svg|webp)", "destination": "/web/:file*.:ext" },
-
-    { "source": "/", "destination": "/web/index.html" },
-    { "source": "/:path*", "destination": "/web/index.html" }
+    { "handle": "filesystem" },
+    { "src": "/favicon.ico", "dest": "web/favicon.ico" },
+    { "src": "/(.*)", "dest": "web/$1" },
+    { "src": "/", "dest": "web/index.html" }
   ]
 }
