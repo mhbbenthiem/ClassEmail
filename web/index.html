@@ -1,0 +1,161 @@
+<!DOCTYPE html>
+<html lang="pt-BR">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0"/>
+  <title>AutoClassify • Emails</title>
+  <link rel="icon" href="favicon.ico" sizes="any">
+  <link rel="stylesheet"
+      href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/5.15.4/css/all.min.css">
+  <link rel="stylesheet" href="styles.css">  
+  <meta property="og:title" content="AutoClassify • Emails" />
+  <meta property="og:description" content="Interface segura para classificação de e-mails" />
+  <meta property="og:type" content="website" />
+</head>
+<body>
+  <div class="container">
+    <!-- Header -->
+    <header class="header">
+      <div class="brand">
+        <div class="logo">
+          <div class="logo-dot"></div>
+        </div>
+        <div class="brand-text">
+          <h1>AutoClassify • Emails</h1>
+          <p class="subtitle">Interface segura para classificação de e-mails</p>
+        </div>
+      </div>
+      <div class="header-actions">
+        <button class="btn btn-secondary" id="btnRestart">
+          <i class="fas fa-refresh"></i>
+          Recomeçar
+        </button>
+      </div>
+    </header>
+
+    <!-- Main Content -->
+    <main class="main-grid">
+      <!-- Input Section -->
+      <section class="card input-section">
+        <div class="card-header">
+          <h2>Análise de E-mail</h2>
+          <p class="card-description">Cole o e-mail ou envie arquivo .txt/.pdf</p>
+        </div>
+        
+        <div class="input-area">
+          <textarea 
+            id="emailText" 
+            class="email-textarea"
+            placeholder="Ex.: Bom dia! Podem verificar o status do meu chamado? Estou com erro de acesso."
+          ></textarea>
+        </div>
+
+        <div class="input-actions">
+          <label class="btn btn-secondary file-input-label">
+            <input id="fileInput" type="file" accept=".txt,.pdf" class="file-input">
+            <i class="fas fa-paperclip"></i>
+            Arquivo
+          </label>
+
+          <div id="fileBadge" class="file-badge" style="display: none;">
+            <i class="fas fa-file-alt"></i>
+            <span id="selectedFileName" class="file-name"></span>
+            <span id="selectedFileMeta" class="file-meta"></span>
+            <button type="button" id="btnRemoveFile" class="btn btn-ghost btn-sm remove-file-btn">
+              <i class="fas fa-times"></i>
+            </button>
+          </div>
+
+          <button class="btn btn-primary" id="btnAnalyze">
+            <i class="fas fa-search"></i>
+            Analisar
+          </button>
+        </div>
+
+        <!-- KPIs -->
+        <div class="kpis-grid">
+          <div class="kpi-card">
+            <div class="kpi-label">Sessão: Total</div>
+            <div class="kpi-value" id="sessTotal">0</div>
+          </div>
+          <div class="kpi-card">
+            <div class="kpi-label">Sessão: Prod / Improd</div>
+            <div class="kpi-value">
+              <span id="sessProd">0</span> / <span id="sessImprod">0</span>
+            </div>
+            <div class="progress-bar">
+              <div class="progress-fill" id="sessBar"></div>
+            </div>
+          </div>
+          <div class="kpi-card">
+            <div class="kpi-label">Acumulado (API): Conf. média</div>
+            <div class="kpi-value" id="apiAvg">–</div>
+          </div>
+        </div>
+      </section>
+
+      <!-- Results Section -->
+      <section class="card results-section">
+        <div class="card-header">
+          <h2>Resultado</h2>
+        </div>
+        
+        <div class="result-content" id="result">
+          <div class="result-row" id="statusRow">
+            <span class="status-text">Aguardando análise...</span>
+          </div>
+          
+          <div class="result-row" id="catRow" style="display: none;">
+            <span class="result-label">Categoria:</span>
+            <span class="badge" id="badge">—</span>
+          </div>
+          
+          <div class="result-row" id="confRow" style="display: none;">
+            <span class="result-label">Confiança:</span>
+            <span class="confidence-value" id="conf">—</span>
+          </div>
+          
+          <div class="result-section" id="respRow" style="display: none;">
+            <div class="result-label">Resposta sugerida (editável):</div>
+            <div id="resp" class="response-box" contenteditable="true"></div>
+            <button class="btn btn-secondary" id="btnCopy">
+              <i class="fas fa-copy"></i>
+              Copiar resposta
+            </button>
+          </div>
+          
+          <div class="result-section" id="origRow" style="display: none;">
+            <div class="result-label">Trecho original:</div>
+            <div id="orig" class="original-text"></div>
+          </div>
+        </div>
+      </section>
+    </main>
+
+    <!-- History Section -->
+    <section class="card history-section">
+      <div class="card-header">
+        <h2>Histórico desta sessão</h2>
+      </div>
+      <div id="history" class="history-content"></div>
+    </section>
+
+    <!-- Footer -->
+    <footer class="footer">
+      <div class="footer-info">
+        API: <span class="api-status" id="apiBase">detectando…</span>
+      </div>
+      <div class="footer-links">
+        <a href="#" class="docs-link" id="docsLink" target="_blank">/docs</a>
+      </div>
+    </footer>
+  </div>
+
+  <!-- Toast -->
+  <div id="toast" class="toast" style="display: none;">
+    <div class="toast-content" id="toastContent"></div>
+  </div>
+
+  <script src="script.js"></script>
+</body>
+</html>
