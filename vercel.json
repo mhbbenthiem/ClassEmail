@@ -1,12 +1,11 @@
 {
-  "routes": [
-    { "src": "/api/(.*)", "dest": "api/index.py" },
+  "rewrites": [
+    { "source": "/api/:match*", "destination": "/api/index.py" },
 
-    { "handle": "filesystem" }, 
-    { "src": "/favicon.ico", "dest": "/web/favicon.ico" },
-    { "src": "/(.*)\\.(css|js|png|jpg|jpeg|svg|webp)", "dest": "/web/$1.$2" },
+    { "source": "/favicon.ico", "destination": "/web/favicon.ico" },
+    { "source": "/:file*.(css|js|png|jpg|jpeg|svg|webp)", "destination": "/web/:file*.:ext" },
 
-    { "src": "/", "dest": "/web/index.html" },
-    { "src": "/(.*)", "dest": "/web/$1" }
+    { "source": "/", "destination": "/web/index.html" },
+    { "source": "/:path*", "destination": "/web/index.html" }
   ]
 }
