@@ -83,6 +83,32 @@ async def _run_classifier(text_processed: str, text_original: str):
         return await maybe_coro
     return maybe_coro
 
+@app.post("/analyze")
+async def analyze(request: Request):
+    ct = request.headers.get("content-type", "") or ""
+    try:
+        if ct.startswith("multipart/form-data"):
+            form = await request.form()
+            up = form.get("file")
+            if not isinstance(up, UploadFile):
+                raise HTTPException(status_code=400, detail="Campo 'file' ausente.")
+            content = await up.read()
+            if len(content) > 4*1024*1024:
+                raise HTTPException(status_code=413, detail="Arquivo muito grande (máx 4 MB).")
+            text = extract_text_from_file(content, up.filename)
+        else:
+            data = await request.json()
+            text = (data or {}).get("text", "")
+            if not text.strip():
+                raise HTTPException(status_code=400, detail="Campo 'text' ausente.")
+
+        processed = preprocess_text(text)
+        result = await _run_classifier(processed, text)  # usa seu helper
+        return result
+
+    except ValueError as e:
+        # ex.: PDF escaneado sem texto
+        raise HTTPException(status_code=400, detail=str(e))
 
 @app.post("/analyze")
 async def analyze(request: Request):
