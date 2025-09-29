@@ -1,10 +1,25 @@
+import os
 import logging
-from typing import Dict
-from transformers import pipeline
-from .utils import calculate_keyword_score, get_device_info, is_greeting_no_action, suggest_response
-import os 
+from typing import Dict, Optional
 
 logger = logging.getLogger(__name__)
+
+# Import preguiçoso de Transformers (somente se permitido e existir no ambiente)
+pipeline = None
+try:
+    if os.getenv("DISABLE_MODEL") != "1":
+        from transformers import pipeline as hf_pipeline  # pode não existir no deploy
+        pipeline = hf_pipeline
+except Exception as e:
+    logger.info(f"Transformers indisponível/omitido: {e}")
+
+from .utils import (
+    calculate_keyword_score,
+    get_device_info,
+    is_greeting_no_action,
+    suggest_response,
+)
+
 
 class EmailClassifier:
     def __init__(self):

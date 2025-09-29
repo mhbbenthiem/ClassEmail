@@ -18,7 +18,7 @@ try:
         nltk.download('rslp', quiet=True)
 except Exception as e:
     logger.warning(f"NLTK data indisponível: {e}")
-    
+
 INTENT_PATTERNS = [
     ("status", r"\b(status|andamento|situa[cç][aã]o|progresso)\b"),
     ("login", r"\b(login|acesso|403|senha|bloqueio)\b"),
@@ -113,13 +113,6 @@ def suggest_response(category: str, text: str) -> str:
     # fallback produtivo
     return ("Recebido! Para avançarmos mais rápido, poderia detalhar contexto, objetivo e algum ID (chamado/NF/contrato)?")
 
-# Download required NLTK data
-try:
-    nltk.download('punkt', quiet=True)
-    nltk.download('stopwords', quiet=True)
-    nltk.download('rslp', quiet=True)
-except:
-    logger.warning("Could not download NLTK data. Using fallback preprocessing.")
 
 # Initialize Portuguese stemmer
 try:
