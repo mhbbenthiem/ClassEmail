@@ -85,3 +85,14 @@ async def analyze(request: Request):
         return await _run_classifier(processed, text)
     except ValueError as e:
         raise HTTPException(status_code=400, detail=str(e))
+@app.get("/stats")
+async def stats():
+    return {
+        "total_classifications": getattr(classifier, "total_classifications", 0),
+        "productive_count": getattr(classifier, "productive_count", 0),
+        "unproductive_count": getattr(classifier, "unproductive_count", 0),
+        "average_confidence": (
+            sum(getattr(classifier, "confidence_scores", []) or [0]) /
+            max(1, len(getattr(classifier, "confidence_scores", [])))
+        ),
+    }
