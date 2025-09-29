@@ -7,8 +7,8 @@
     { "src": "^/api/.*", "dest": "api/index.py" },
 
     { "handle": "filesystem" },
-    { "src": "/favicon.ico", "dest": "web/index.html" },
-    { "src": "^(.*)$", "dest": "web/$1" },
-    { "src": "/", "dest": "web/index.html" }
+    { "src": "/favicon.ico", "dest": "web/favicon.ico" },
+    { "src": "^/$", "dest": "web/index.html" },
+    { "src": "^(.*)$", "dest": "web/$1" }
   ]
 }
