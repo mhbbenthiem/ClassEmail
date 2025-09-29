@@ -1,23 +1,66 @@
 const API = "/api";  // nada de localhost no deploy
+// parse seguro (se a API retornar HTML de erro, não quebra o front)
+async function safeJson(r){
+  try { return await r.json(); }
+  catch { return { detail: (await r.text()).slice(0, 300) }; }
+}
 
+// KPIs da API (no-op se /stats não existir)
+async function refreshApiKPIs(){
+  try{
+    const r = await fetch(`${API}/stats`);
+    if(!r.ok) return;
+    const j = await r.json();
+    // atualize elementos se existirem
+    const elTotal = document.querySelector("#kpiTotal");
+    const elConf  = document.querySelector("#kpiAvgConf");
+    const elProd  = document.querySelector("#kpiProdShare");
+    if (elTotal) elTotal.textContent = j.total_classifications ?? 0;
+    if (elConf)  elConf.textContent  = (+(j.average_confidence||0)*100).toFixed(1)+"%";
+    if (elProd)  elProd.textContent  = `${j.productive_count||0}/${(j.total_classifications||0)}`;
+  }catch(e){
+    console.warn("refreshApiKPIs:", e);
+  }
+}
+
+// limpar seleção de arquivo e esconder o badge (ajuste IDs conforme seu HTML)
+function clearFileSelection(){
+  const fileInput = document.getElementById("fileInput");
+  const fileBadge = document.getElementById("fileBadge");
+  if (fileInput) fileInput.value = "";
+  if (fileBadge) fileBadge.style.display = "none";
+}
 async function analyze(){
-  const txt = document.getElementById("emailText").value.trim();
-  const f = document.getElementById("fileInput").files[0];
-  let r;
-  if (f){
+  const txtEl = document.getElementById("emailText");
+  const fileEl = document.getElementById("fileInput");
+  const text = (txtEl?.value || "").trim();
+  const file = fileEl?.files?.[0];
+
+  let endpoint, options;
+
+  if (file) {
     const fd = new FormData();
-    fd.append("file", f);
-    r = await fetch(`${API}/analyze`, { method: "POST", body: fd });
+    fd.append("file", file);
+    endpoint = `${API}/classify-file`;   // ✅ rota que existe no backend
+    options  = { method: "POST", body: fd };
   } else {
-    r = await fetch(`${API}/analyze`, {
+    if (!text) { alert("Cole um texto ou selecione um arquivo."); return; }
+    endpoint = `${API}/classify-text`;   // ✅ rota que existe no backend
+    options  = {
       method: "POST",
       headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ text: txt })
-    });
+      body: JSON.stringify({ text })
+    };
   }
-  const j = await r.json();
-  if(!r.ok) throw new Error(j.detail || "Erro");
-  // … renderiza resultado …
+
+  const r = await fetch(endpoint, options);
+  const data = await safeJson(r);
+  if (!r.ok) throw new Error(data.detail || `HTTP ${r.status}`);
+
+  // 👉 aqui você atualiza a UI com 'data'
+  // ex.: renderResult(data); addEntry(data);
+  refreshApiKPIs();
+  clearFileSelection();
 }
   const $ = s => document.querySelector(s);
   const els = {
