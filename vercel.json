@@ -4,11 +4,11 @@
     { "src": "web/**", "use": "@vercel/static" }
   ],
   "routes": [
-    { "src": "/api/(.*)", "dest": "api/index.py" },
+    { "src": "^/api/.*", "dest": "api/index.py" },
 
     { "handle": "filesystem" },
-    { "src": "/favicon.ico", "dest": "web/favicon.ico" },
-    { "src": "/(.*)", "dest": "web/$1" },
+    { "src": "/favicon.ico", "dest": "web/index.html" },
+    { "src": "^(.*)$", "dest": "web/$1" },
     { "src": "/", "dest": "web/index.html" }
   ]
 }
