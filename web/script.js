@@ -7,18 +7,32 @@ async function safeJson(r){
 
 async function refreshApiKPIs(){
   try{
-    const r = await fetch(`${API}/stats`);
-    if(!r.ok) return;
-    const j = await r.json();
-    // atualize KPIs se existirem
-    const elTotal = document.querySelector("#kpiTotal");
-    const elConf  = document.querySelector("#kpiAvgConf");
-    const elProd  = document.querySelector("#kpiProdShare");
-    if (elTotal) elTotal.textContent = j.total_classifications ?? 0;
-    if (elConf)  elConf.textContent  = (+(j.average_confidence||0)*100).toFixed(1)+"%";
-    if (elProd)  elProd.textContent  = `${j.productive_count||0}/${(j.total_classifications||0)}`;
-  }catch(e){ /* ignora */ }
+    // tenta /stats
+    let r = await fetch(`${API}/stats`);
+    if (r.ok) {
+      const j = await r.json();
+      const elTotal = document.querySelector("#sessTotal");
+      const elConf  = document.querySelector("#apiAvg");
+      const elProd  = document.querySelector("#sessProd");
+      const elImpr  = document.querySelector("#sessImprod");
+      if (elTotal) elTotal.textContent = j.total_classifications ?? 0;
+      if (elConf)  elConf.textContent  = (+(j.average_confidence||0)*100).toFixed(1)+"%";
+      if (elProd)  elProd.textContent  = j.productive_count ?? 0;
+      if (elImpr)  elImpr.textContent  = j.unproductive_count ?? 0;
+      return;
+    }
+
+    // fallback: /health (só indica 'ok')
+    r = await fetch(`${API}/health`);
+    if (r.ok) {
+      const elConf = document.querySelector("#apiAvg");
+      if (elConf) elConf.textContent = "OK";
+    }
+  }catch(e){
+    console.warn("refreshApiKPIs:", e);
+  }
 }
+
 
 function clearFileSelection(){
   const fileInput = document.getElementById("fileInput");
@@ -34,31 +48,54 @@ async function analyze(e){
   const text   = (txtEl?.value || "").trim();
   const file   = fileEl?.files?.[0];
 
-  let endpoint, options;
+  // 1) tenta /analyze (rota “tudo em um”)
+  try{
+    let resp;
+    if (file){
+      const fd = new FormData(); fd.append("file", file);
+      resp = await fetch(`${API}/analyze`, { method:"POST", body: fd });
+    } else {
+      if (!text) { alert("Cole um texto ou selecione um arquivo."); return; }
+      resp = await fetch(`${API}/analyze`, {
+        method:"POST",
+        headers:{ "Content-Type":"application/json" },
+        body: JSON.stringify({ text })
+      });
+    }
+    if (resp.status !== 404) { // se NÃO for 404, processa normalmente
+      const data = await safeJson(resp);
+      if (!resp.ok) throw new Error(data.detail || `HTTP ${resp.status}`);
+      // TODO: renderizar resultado
+      refreshApiKPIs();
+      return;
+    }
+  }catch(e){
+    // se caiu aqui e não foi 404, segue o fluxo (vamos tentar fallback)
+    if (e?.message && !/HTTP 404|Not Found/i.test(e.message)) throw e;
+  }
 
-  if (file) {
-    const fd = new FormData();
-    fd.append("file", file);
-    endpoint = `${API}/classify-file`;     
-    options  = { method: "POST", body: fd };
+  // 2) Fallback: usa as rotas que EXISTEM no seu backend
+  let endpoint, options;
+  if (file){
+    const fd = new FormData(); fd.append("file", file);
+    endpoint = `${API}/classify-file`;
+    options  = { method:"POST", body: fd };
   } else {
-    if (!text) { alert("Cole um texto ou selecione um arquivo."); return; }
-    endpoint = `${API}/classify-text`;     
+    endpoint = `${API}/classify-text`;
     options  = {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
+      method:"POST",
+      headers:{ "Content-Type":"application/json" },
       body: JSON.stringify({ text })
     };
   }
+  const r2 = await fetch(endpoint, options);
+  const d2 = await safeJson(r2);
+  if (!r2.ok) throw new Error(d2.detail || `HTTP ${r2.status}`);
 
-  const r = await fetch(endpoint, options);
-  const data = await safeJson(r);
-  if (!r.ok) throw new Error(data.detail || `HTTP ${r.status}`);
-
-
+  // TODO: renderizar resultado com d2
   refreshApiKPIs();
-  clearFileSelection();
 }
+
 
   const $ = s => document.querySelector(s);
   const els = {
