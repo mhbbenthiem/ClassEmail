@@ -7,9 +7,18 @@ from nltk.stem import RSLPStemmer
 from nltk.tokenize import word_tokenize
 from PyPDF2 import PdfReader
 import io
+import os
 
 logger = logging.getLogger(__name__)
 
+try:
+    if os.getenv("NLTK_DOWNLOAD") == "1":
+        nltk.download('punkt', quiet=True)
+        nltk.download('stopwords', quiet=True)
+        nltk.download('rslp', quiet=True)
+except Exception as e:
+    logger.warning(f"NLTK data indisponível: {e}")
+    
 INTENT_PATTERNS = [
     ("status", r"\b(status|andamento|situa[cç][aã]o|progresso)\b"),
     ("login", r"\b(login|acesso|403|senha|bloqueio)\b"),

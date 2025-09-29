@@ -2,6 +2,7 @@ import logging
 from typing import Dict
 from transformers import pipeline
 from .utils import calculate_keyword_score, get_device_info, is_greeting_no_action, suggest_response
+import os 
 
 logger = logging.getLogger(__name__)
 
