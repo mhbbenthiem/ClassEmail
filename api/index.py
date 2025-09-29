@@ -1,8 +1,8 @@
-# api/index.py  (HELLO API DE TESTE)
-from fastapi import FastAPI
+import sys
+from pathlib import Path
 
-app = FastAPI()
+ROOT = Path(__file__).resolve().parent.parent
+if str(ROOT) not in sys.path:
+    sys.path.insert(0, str(ROOT))
 
-@app.get("/health")
-def health():
-    return {"status": "ok"}
+from backend.app import app  
