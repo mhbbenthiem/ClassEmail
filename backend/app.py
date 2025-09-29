@@ -7,6 +7,7 @@ from .email_classifier import EmailClassifier
 from .utils import preprocess_text, extract_text_from_file
 import logging
 import inspect
+from pathlib import Path
 
 # Configure logging
 logging.basicConfig(level=logging.INFO)
@@ -19,7 +20,17 @@ app = FastAPI(
 )
 
 WEB_DIR = os.path.normpath(os.path.join(os.path.dirname(__file__), "..", "web"))
-app.mount("/ui", StaticFiles(directory=WEB_DIR, html=True), name="ui")
+# 🔧 Em serverless (Vercel) os arquivos estáticos de /web são servidos pela Vercel,
+# então só monte /ui se a pasta existir no filesystem desta função.
+try:
+    WEB_DIR = (Path(__file__).resolve().parent.parent / "web")
+    if WEB_DIR.exists():
+        app.mount("/ui", StaticFiles(directory=str(WEB_DIR), html=True), name="ui")
+        logger.info(f"Mounted /ui from {WEB_DIR}")
+    else:
+        logger.info("Static UI not mounted (web/ not present in function bundle).")
+except Exception as e:
+    logger.info(f"Skipping static mount: {e}")
 
 # Configure CORS
 app.add_middleware(
@@ -73,42 +84,34 @@ async def _run_classifier(text_processed: str, text_original: str):
     return maybe_coro
 
 
-@app.post("/analyze", response_model=ClassificationResponse)
+@app.post("/analyze")
 async def analyze(request: Request):
-    ctype = (request.headers.get("content-type") or "").lower()
+    ct = request.headers.get("content-type", "") or ""
+    try:
+        if ct.startswith("multipart/form-data"):
+            form = await request.form()
+            up = form.get("file")
+            if not isinstance(up, UploadFile):
+                raise HTTPException(status_code=400, detail="Campo 'file' ausente.")
+            content = await up.read()
+            text = extract_text_from_file(content, up.filename)
+        else:
+            data = await request.json()
+            text = (data or {}).get("text", "")
+            if not text.strip():
+                raise HTTPException(status_code=400, detail="Campo 'text' ausente.")
 
-    # JSON → {"text": "..."}
-    if "application/json" in ctype:
-        data = await request.json()
-        text = (data.get("text") or "").strip()
-        if not text:
-            raise HTTPException(status_code=400, detail="Campo 'text' vazio.")
         processed = preprocess_text(text)
-        result = await _run_classifier(processed, text)
-        return ClassificationResponse(**result)
+        result = await _run_classifier(processed, text)  # seu helper já trata sync/async
+        return result
 
-    # multipart/form-data → campo "file"
-    elif "multipart/form-data" in ctype:
-        form = await request.form()
-        up = form.get("file")
-        if not up:
-            raise HTTPException(status_code=400, detail="Envie o arquivo no campo 'file'.")
-        content = await up.read()
-        try:
-            text = extract_text_from_file(content, up.filename)  # .txt ou .pdf (texto)
-        except Exception as e:
-            raise HTTPException(status_code=400, detail=f"Erro ao ler arquivo: {e}")
-        processed = preprocess_text(text)
-        result = await _run_classifier(processed, text)
-        return ClassificationResponse(**result)
-
-    # Outros content-types
-    else:
-        raise HTTPException(
-            status_code=415,
-            detail="Content-Type não suportado. Envie JSON (application/json) com 'text' ou multipart/form-data com 'file'."
-        )
-
+    except ValueError as e:
+        raise HTTPException(status_code=400, detail=str(e))  # PDF sem texto etc.
+    except HTTPException:
+        raise
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=f"Falha ao processar: {e}")
+    
 @app.post("/classify-text", response_model=ClassificationResponse)
 async def classify_text(req: ClassificationRequest):
     text = req.text

@@ -16,6 +16,12 @@ class EmailClassifier:
         
     async def initialize(self):
         """Initialize AI models"""
+        if os.getenv("DISABLE_MODEL") == "1":
+            self.classifier_pipeline = None
+            self.model_loaded = False
+            self.is_initialized = True
+            logger.info("Model disabled by env (DISABLE_MODEL=1). Using keyword-only classification.")
+            return
         try:
             logger.info("Loading sentiment analysis model...")
             

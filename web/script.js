@@ -1,4 +1,24 @@
-  const API = "/api";
+const API = "/api";  // nada de localhost no deploy
+
+async function analyze(){
+  const txt = document.getElementById("emailText").value.trim();
+  const f = document.getElementById("fileInput").files[0];
+  let r;
+  if (f){
+    const fd = new FormData();
+    fd.append("file", f);
+    r = await fetch(`${API}/analyze`, { method: "POST", body: fd });
+  } else {
+    r = await fetch(`${API}/analyze`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ text: txt })
+    });
+  }
+  const j = await r.json();
+  if(!r.ok) throw new Error(j.detail || "Erro");
+  // … renderiza resultado …
+}
   const $ = s => document.querySelector(s);
   const els = {
     fileInput: $("#fileInput"),
