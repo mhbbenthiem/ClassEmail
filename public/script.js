@@ -1,5 +1,6 @@
 const API = "/api";
-
+const now = () =>
+  new Date().toLocaleString("pt-BR", { hour12: false });
 async function safeJson(r){
   try { return await r.json(); }
   catch { return { detail: (await r.text()).slice(0, 300) }; }
@@ -63,10 +64,14 @@ async function analyze(e){
       });
     }
     if (resp.status !== 404) { // se NÃO for 404, processa normalmente
-      const data = await safeJson(resp);
-      if (!resp.ok) throw new Error(data.detail || `HTTP ${resp.status}`);
       // TODO: renderizar resultado
       refreshApiKPIs();
+      const data = await safeJson(resp);
+      if (!resp.ok) throw new Error(data.detail || `HTTP ${resp.status}`);
+
+      // adicione:
+      showResult(data);
+      addEntry({ ...data, ts: now(), filename: file ? file.name : undefined });
       return;
     }
   }catch(e){
