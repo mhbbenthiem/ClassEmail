@@ -96,3 +96,9 @@ async def stats():
             max(1, len(getattr(classifier, "confidence_scores", [])))
         ),
     }
+
+_internal_app = app  # guarda o app atual
+
+from fastapi import FastAPI as _FastAPI
+app = _FastAPI(title="Email Classifier (mounted)")
+app.mount("/api", _internal_app)
