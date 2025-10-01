@@ -82,7 +82,6 @@ els.btnRemove?.addEventListener("click", (e) => {
 });
 
 /* ========================== API KPIs ========================== */
-/* ========================== API KPIs ========================== */
 async function refreshApiKPIs(){
   try{
     let r = await fetch(`${API}/stats`);
@@ -236,38 +235,57 @@ async function analyze(e){
   try{
     let resp, data;
 
-    // Tenta /analyze
+    // monta payload
+    let body, isJson = false;
     if (hasFile){
       const fd = new FormData();
-      fd.append("file", file, file.name); // CHAVE "file"
-      resp = await fetch(`${API}/analyze`, { method:"POST", body: fd });
+      fd.append("file", file, file.name); // 👈 chave exigida
+      // diagnóstico opcional
+      for (const [k, v] of fd.entries()) {
+        console.log("FormData ->", k, v && v.name ? v.name : v);
+      }
+      body = fd;
     } else {
-      resp = await fetch(`${API}/analyze`, {
-        method:"POST",
-        headers:{"Content-Type":"application/json"},
-        body: JSON.stringify({ text })
-      });
+      isJson = true;
+      body = JSON.stringify({ text });
     }
 
-    // Fallback se /analyze não existir
-    if (resp.status === 404){
-      if (hasFile){
-        const fd2 = new FormData();
-        fd2.append("file", file, file.name);
-        resp = await fetch(`${API}/classify`, { method:"POST", body: fd2 });
-      } else {
+    // 1ª tentativa: /api/analyze
+    resp = await fetch(`${API}/analyze`, {
+      method: "POST",
+      body,
+      headers: isJson ? { "Content-Type": "application/json" } : undefined
+    });
+
+    // Fallbacks: se 404 ou 400 com a mensagem "Envie 'file' (multipart) ou 'text'."
+    if (!resp.ok && (resp.status === 404 || resp.status === 405 || resp.status === 415 || resp.status === 400)) {
+      let retry = false;
+      try {
+        const peek = await resp.clone().json().catch(() => null);
+        if (resp.status === 400 && peek && /Envie 'file' \(multipart\) ou 'text'/.test(peek.detail || "")) {
+          retry = true;
+        }
+        if (resp.status === 404 || resp.status === 405 || resp.status === 415) retry = true;
+      } catch (_) { /* ignore */ }
+
+      if (retry){
+        console.warn("Retrying on /api/classify …");
         resp = await fetch(`${API}/classify`, {
-          method:"POST",
-          headers:{"Content-Type":"application/json"},
-          body: JSON.stringify({ text })
+          method: "POST",
+          body,
+          headers: isJson ? { "Content-Type": "application/json" } : undefined
         });
       }
     }
 
-    data = await safeJson(resp);
-    if (!resp.ok) throw new Error(data.detail || `HTTP ${resp.status}`);
+    // trata resposta final
+    const raw = await resp.text();
+    try { data = JSON.parse(raw); } catch { data = { detail: raw }; }
 
-    // sucesso
+    if (!resp.ok) {
+      throw new Error(data.detail || `HTTP ${resp.status}`);
+    }
+
     showResult(data);
     addEntry({ ...data, ts: now(), filename: hasFile ? file.name : undefined });
     await refreshApiKPIs();
@@ -286,6 +304,7 @@ async function analyze(e){
     setLoading(false);
   }
 }
+
 
 /* ========================== WIRES ========================== */
 on("btnAnalyze","click", analyze);
