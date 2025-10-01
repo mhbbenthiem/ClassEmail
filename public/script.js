@@ -49,7 +49,6 @@ async function analyze(e){
   const text   = (txtEl?.value || "").trim();
   const file   = fileEl?.files?.[0];
 
-  // 1) tenta /analyze (rota “tudo em um”)
   try{
     let resp;
     if (file){
@@ -63,23 +62,20 @@ async function analyze(e){
         body: JSON.stringify({ text })
       });
     }
-    if (resp.status !== 404) { // se NÃO for 404, processa normalmente
-      // TODO: renderizar resultado
+    if (resp.status !== 404) { 
       refreshApiKPIs();
       const data = await safeJson(resp);
       if (!resp.ok) throw new Error(data.detail || `HTTP ${resp.status}`);
 
-      // adicione:
       showResult(data);
       addEntry({ ...data, ts: now(), filename: file ? file.name : undefined });
       return;
     }
   }catch(e){
-    // se caiu aqui e não foi 404, segue o fluxo (vamos tentar fallback)
+    
     if (e?.message && !/HTTP 404|Not Found/i.test(e.message)) throw e;
   }
 
-  // 2) Fallback: usa as rotas que EXISTEM no seu backend
   let endpoint, options;
   if (file){
     const fd = new FormData(); fd.append("file", file);
@@ -97,7 +93,6 @@ async function analyze(e){
   const d2 = await safeJson(r2);
   if (!r2.ok) throw new Error(d2.detail || `HTTP ${r2.status}`);
 
-  // TODO: renderizar resultado com d2
   refreshApiKPIs();
 }
 
@@ -110,7 +105,7 @@ async function analyze(e){
     fileMeta:  $("#selectedFileMeta"),
     btnRemove: $("#btnRemoveFile"),
     btnAnalyze: $("#btnAnalyze"),
-    statusRow: $("#statusRow"), // opcional: se tiver uma área de status
+    statusRow: $("#statusRow"), 
   };
 
   // helpers
@@ -321,7 +316,6 @@ els.btnRemove.addEventListener("click", () => {
         addEntry({ ...j, ts: now(), filename: f ? f.name : undefined });
         refreshApiKPIs();
 
-        // 👇 NOVO: limpar o arquivo da UI após análise bem-sucedida
         if (f) {
           fileInput.value = "";    // limpa o input
           hideFileBadge();         // esconde o badge com o nome do arquivo

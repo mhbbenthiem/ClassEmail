@@ -53,7 +53,7 @@ ACTION_TRIGGERS = [
 ]
 def is_greeting_no_action(text: str) -> bool:
     t = re.sub(r"\s+", " ", text.lower())
-    if "?" in t:  # pergunta = tende a ação
+    if "?" in t:  
         return False
     if any(re.search(p, t) for p in ACTION_TRIGGERS):
         return False
@@ -110,11 +110,10 @@ def suggest_response(category: str, text: str) -> str:
     if intent == "pagamento":
         return ("Vamos consultar o financeiro sobre a previsão de pagamento e retornamos. "
                 "Se puder, informe número da NF e data de vencimento.")
-    # fallback produtivo
+    
     return ("Recebido! Para avançarmos mais rápido, poderia detalhar contexto, objetivo e algum ID (chamado/NF/contrato)?")
 
 
-# Initialize Portuguese stemmer
 try:
     stemmer = RSLPStemmer()
     portuguese_stopwords = set(stopwords.words('portuguese'))
@@ -125,9 +124,8 @@ except:
 def get_device_info() -> str:
     """Retorna info do dispositivo sem exigir PyTorch instalado."""
     try:
-        import torch  # import opcional/lazy
+        import torch  
 
-        # CUDA (NVIDIA)
         if hasattr(torch, "cuda") and torch.cuda.is_available():
             try:
                 name = torch.cuda.get_device_name(0)
@@ -135,7 +133,6 @@ def get_device_info() -> str:
                 name = "CUDA GPU"
             return f"CUDA GPU: {name}"
 
-        # MPS (Apple Silicon)
         if (
             hasattr(torch, "backends")
             and hasattr(torch.backends, "mps")
@@ -143,10 +140,9 @@ def get_device_info() -> str:
         ):
             return "Apple Silicon MPS"
 
-        # Torch presente mas sem aceleração
         return "CPU"
     except Exception:
-        # Torch ausente ou qualquer erro → CPU
+        
         return "CPU"
 
 
@@ -160,43 +156,39 @@ def preprocess_text(text: str) -> str:
     - Stemming (when available)
     """
     try:
-        # Basic cleaning
+        
         text = text.lower()
-        text = re.sub(r'[^\w\s]', ' ', text)  # Remove punctuation
-        text = re.sub(r'\d+', ' ', text)      # Remove numbers
-        text = re.sub(r'\s+', ' ', text)      # Remove extra spaces
+        text = re.sub(r'[^\w\s]', ' ', text)  # Remove pontuação
+        text = re.sub(r'\d+', ' ', text)      # Remove números
+        text = re.sub(r'\s+', ' ', text)      # Remove espaços extras
         text = text.strip()
         
         if not text:
             return ""
         
-        # Tokenization
         try:
             tokens = word_tokenize(text, language='portuguese')
         except:
-            # Fallback tokenization
+            
             tokens = text.split()
         
-        # Remove stopwords
         if portuguese_stopwords:
             tokens = [token for token in tokens if token not in portuguese_stopwords]
         
-        # Stemming
         if stemmer:
             try:
                 tokens = [stemmer.stem(token) for token in tokens]
             except:
-                # If stemming fails, keep original tokens
+                
                 pass
         
-        # Remove very short tokens
         tokens = [token for token in tokens if len(token) > 2]
         
         return ' '.join(tokens)
         
     except Exception as e:
         logger.error(f"Preprocessing error: {e}")
-        # Fallback: basic cleaning only
+        
         text = re.sub(r'[^\w\s]', ' ', text.lower())
         text = re.sub(r'\s+', ' ', text).strip()
         return text
@@ -206,7 +198,7 @@ def calculate_keyword_score(text: str) -> Dict:
     Calculate productivity score based on corporate keywords
     Returns category, confidence, and raw score
     """
-    # Usar texto em minúsculas SEM stemming (ideal: passar o original lower() na chamada)
+
     t = text.lower()
 
     productive_keywords = [
@@ -240,7 +232,6 @@ def calculate_keyword_score(text: str) -> Dict:
         'fantástico', 'incrível', 'amazing', 'wonderful'
     ]
 
-    # Palavras que NÃO indicam ação (penalizam o score produtivo se aparecerem)
     non_action_words = [
         'obrigado', 'obrigada', 'agradeço', 'agradecemos',
         'parabéns', 'boas festas', 'feliz natal', 'feliz ano novo'
@@ -249,7 +240,6 @@ def calculate_keyword_score(text: str) -> Dict:
     productive_score = sum(1 for kw in productive_keywords if kw in t)
     unproductive_score = sum(1 for kw in unproductive_keywords if kw in t)
 
-    # Penalização leve se houver termos claramente não-ação
     for w in non_action_words:
         if w in t and productive_score > 0:
             productive_score -= 1
@@ -265,7 +255,7 @@ def calculate_keyword_score(text: str) -> Dict:
         raw_score = unproductive_score
         confidence = min(0.6 + (unproductive_score * 0.08), 0.9)
     else:
-        # Empate/zero: se for saudação sem ação → Improdutivo; senão Produtivo
+        
         if is_greeting_no_action(t):
             category = 'Improdutivo'
             raw_score = 0
@@ -289,7 +279,6 @@ def validate_email_content(text: str) -> bool:
     if not text or len(text.strip()) < 10:
         return False
     
-    # Check for minimum meaningful content
     words = text.split()
     if len(words) < 3:
         return False

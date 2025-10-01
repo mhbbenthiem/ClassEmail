@@ -12,7 +12,6 @@ from .utils import preprocess_text, extract_text_from_file
 logger = logging.getLogger(__name__)
 app = FastAPI(title="Email Classifier API", version="1.0.0")
 
-# Monta /ui só se a pasta existir (local). Na Vercel, quem serve /web é a própria Vercel.
 try:
     WEB_DIR = (Path(__file__).resolve().parent.parent / "web")
     if WEB_DIR.exists():
@@ -64,7 +63,7 @@ async def classify_file(file: UploadFile = File(...)):
     processed = preprocess_text(text)
     return await _run_classifier(processed, text)
 
-# OPCIONAL: rota unificada /analyze (texto OU arquivo)
+
 @app.post("/analyze")
 async def analyze(request: Request):
     ct = request.headers.get("content-type","") or ""

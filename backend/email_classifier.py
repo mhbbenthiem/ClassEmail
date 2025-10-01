@@ -4,11 +4,10 @@ from typing import Dict, Optional
 
 logger = logging.getLogger(__name__)
 
-# Import preguiçoso de Transformers (somente se permitido e existir no ambiente)
 pipeline = None
 try:
     if os.getenv("DISABLE_MODEL") != "1":
-        from transformers import pipeline as hf_pipeline  # pode não existir no deploy
+        from transformers import pipeline as hf_pipeline  
         pipeline = hf_pipeline
 except Exception as e:
     logger.info(f"Transformers indisponível/omitido: {e}")
@@ -41,12 +40,11 @@ class EmailClassifier:
         try:
             logger.info("Loading sentiment analysis model...")
             
-            # Use a lightweight model for better performance
             model_name = "cardiffnlp/twitter-roberta-base-sentiment-latest"
             
             device = -1
             try:
-                import torch  # opcional; pode não existir
+                import torch  # opcional
                 if torch.cuda.is_available():
                     device = 0
             except Exception:
@@ -92,10 +90,9 @@ class EmailClassifier:
             }
 
         try:
-            # 1) Score por keywords deve usar o TEXTO ORIGINAL (lower), não o stemmado
+            # 1) Score por keywords deve usar o TEXTO ORIGINAL (lower)
             keyword_result = calculate_keyword_score(original_text.lower())
 
-            # 2) (Opcional) AI
             ai_category = None
             ai_confidence = 0.5
             if self.classifier_pipeline:
@@ -121,7 +118,7 @@ class EmailClassifier:
             )
 
             # 4) Sugestão e métricas
-            suggested = suggest_response(final_category, original_text)  # <- nome correto
+            suggested = suggest_response(final_category, original_text)  
             self._update_stats(final_category, final_confidence)
 
             return {
@@ -153,24 +150,21 @@ class EmailClassifier:
         keyword_confidence = keyword_result['confidence']
         keyword_score = keyword_result['score']
         
-        # If keywords provide strong signal, use that
-        if keyword_score >= 3:  # Strong keyword presence
+        if keyword_score >= 3:  
             return keyword_category, min(0.85 + (keyword_score * 0.03), 0.95)
         
-        # If AI is available and confident, combine with keywords
         if ai_category and ai_confidence > 0.7:
             if ai_category == keyword_category:
-                # Both agree - high confidence
+                
                 combined_confidence = min(0.8 + (ai_confidence * 0.15), 0.95)
                 return keyword_category, combined_confidence
             else:
-                # Disagreement - use higher confidence source
+                
                 if keyword_confidence > ai_confidence:
                     return keyword_category, keyword_confidence
                 else:
                     return ai_category, ai_confidence
         
-        # Fallback to keyword-based result
         return keyword_category, keyword_confidence
 
 
