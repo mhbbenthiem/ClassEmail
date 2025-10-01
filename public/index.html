@@ -52,14 +52,13 @@
 
         <div class="input-actions">
           <label class="btn btn-secondary file-input-label">
-            <input id="fileInput" type="file" accept=".txt,.pdf" class="file-input">
+            <input id="fileInput" name="file" type="file" accept=".txt,.pdf" class="file-input">
             <i class="fas fa-paperclip"></i>
             Arquivo
           </label>
 
           <div id="fileBadge" class="file-badge" style="display: none;">
             <i class="fas fa-file-alt"></i>
-            <span id="selectedFile" name="file" class="file"></span>
             <span id="selectedFileName" class="file-name"></span>
             <span id="selectedFileMeta" class="file-meta"></span>
             <button type="button" id="btnRemoveFile" class="btn btn-ghost btn-sm remove-file-btn">
