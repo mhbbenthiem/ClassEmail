@@ -214,12 +214,21 @@ function setLoading(is){
   els.btnAnalyze.innerHTML = is ? '<i class="fas fa-spinner fa-spin"></i> Analisando…'
                                 : '<i class="fas fa-search"></i> Analisar';
 }
+// Helper: lê arquivo como texto (UTF-8)
+function readFileAsText(file){
+  return new Promise((resolve, reject) => {
+    const fr = new FileReader();
+    fr.onerror = () => reject(new Error("Falha ao ler o arquivo"));
+    fr.onload = () => resolve(String(fr.result || ""));
+    fr.readAsText(file);
+  });
+}
 
 async function analyze(e){
   if (e) e.preventDefault();
 
   const file = currentFile;
-  const text = (els.emailText?.value || "").trim();
+  const text = (els.emailText && els.emailText.value || "").trim();
   const hasFile = !!(file && file.size > 0);
 
   if (!hasFile && !text){
@@ -235,13 +244,13 @@ async function analyze(e){
   try{
     let resp, data;
 
-    // monta payload
+    // -------- 1ª tentativa: enviar como veio --------
     let body, isJson = false;
     if (hasFile){
       const fd = new FormData();
-      fd.append("file", file, file.name); // 👈 chave exigida
+      fd.append("file", file, file.name);
       // diagnóstico opcional
-      for (const [k, v] of fd.entries()) {
+      for (const [k, v] of fd.entries()){
         console.log("FormData ->", k, v && v.name ? v.name : v);
       }
       body = fd;
@@ -250,35 +259,43 @@ async function analyze(e){
       body = JSON.stringify({ text });
     }
 
-    // 1ª tentativa: /api/analyze
     resp = await fetch(`${API}/analyze`, {
       method: "POST",
       body,
       headers: isJson ? { "Content-Type": "application/json" } : undefined
     });
 
-    // Fallbacks: se 404 ou 400 com a mensagem "Envie 'file' (multipart) ou 'text'."
-    if (!resp.ok && (resp.status === 404 || resp.status === 405 || resp.status === 415 || resp.status === 400)) {
-      let retry = false;
-      try {
+    // -------- Fallback A: se 400 com "Envie 'file' (multipart) ou 'text'." --------
+    // Se tentamos multipart e o servidor recusou, convertimos o arquivo em texto e re-enviamos como JSON.
+    if (!resp.ok && hasFile && resp.status === 400){
+      let retryWithText = false;
+      try{
         const peek = await resp.clone().json().catch(() => null);
-        if (resp.status === 400 && peek && /Envie 'file' \(multipart\) ou 'text'/.test(peek.detail || "")) {
-          retry = true;
+        if (peek && /Envie 'file' \(multipart\) ou 'text'/.test(peek.detail || "")){
+          retryWithText = true;
         }
-        if (resp.status === 404 || resp.status === 405 || resp.status === 415) retry = true;
-      } catch (_) { /* ignore */ }
+      }catch(_){/* ignore */}
+      if (retryWithText){
+        // Só dá pra reencaminhar como texto para tipos textuais (txt, eml, msg, csv, json, etc.)
+        const name = (file.name || "").toLowerCase();
+        const isTextLike =
+          /^text\//.test(file.type) ||
+          file.type === "message/rfc822" ||
+          /\.(txt|eml|msg|csv|json|log|md|rtf)$/i.test(name);
 
-      if (retry){
-        console.warn("Retrying on /api/classify …");
-        resp = await fetch(`${API}/classify`, {
-          method: "POST",
-          body,
-          headers: isJson ? { "Content-Type": "application/json" } : undefined
-        });
+        if (isTextLike){
+          console.warn("Reenviando como JSON { text } …");
+          const fileText = await readFileAsText(file);
+          resp = await fetch(`${API}/analyze`, {
+            method: "POST",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify({ text: fileText })
+          });
+        }
       }
     }
 
-    // trata resposta final
+    // -------- Trata resposta final --------
     const raw = await resp.text();
     try { data = JSON.parse(raw); } catch { data = { detail: raw }; }
 

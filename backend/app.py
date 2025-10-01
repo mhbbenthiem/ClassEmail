@@ -5,7 +5,7 @@ from fastapi.staticfiles import StaticFiles
 from pydantic import BaseModel
 from pathlib import Path
 import inspect, logging
-
+from typing import Optional
 from .email_classifier import EmailClassifier
 from .utils import preprocess_text, extract_text_from_file
 
@@ -64,49 +64,47 @@ async def classify_file(file: UploadFile = File(...)):
     return await _run_classifier(processed, text)
 
 @app.post("/analyze")
-async def analyze(request: Request):
+async def analyze(
+    request: Request,
+    file: Optional[UploadFile] = File(None),
+    text_form: Optional[str] = Form(None),
+):
+    """
+    Aceita:
+    - multipart/form-data com 'file' (UploadFile) OU 'text' (Form)
+    - application/json com {"text": "..."}
+    - text/plain (corpo puro)
+    """
     ct = (request.headers.get("content-type") or "").lower()
+
     try:
-        # --- multipart: arquivo OU texto no form ---
-        if "multipart/form-data" in ct:
-            form = await request.form()
+        text: str = ""
 
-            # debug: ver o que realmente chegou
-            try:
-                logger.info(f"/analyze multipart keys: {list(form.keys())}")
-            except Exception:
-                pass
+        # 1) Caminho 'oficial' para multipart: File/Form
+        if file and getattr(file, "filename", ""):
+            content = await file.read()
+            if len(content) > 4 * 1024 * 1024:
+                raise HTTPException(status_code=413, detail="Arquivo muito grande (máx 4 MB).")
+            text = extract_text_from_file(content, file.filename)
 
-            up = form.get("file")
+        elif text_form and text_form.strip():
+            text = text_form.strip()
 
-            if isinstance(up, UploadFile) and getattr(up, "filename", ""):
-                content = await up.read()
-                if len(content) > 4 * 1024 * 1024:
-                    raise HTTPException(status_code=413, detail="Arquivo muito grande (máx 4 MB).")
-                text = extract_text_from_file(content, up.filename)
-
-            # se não houver 'file', mas vier 'text' no form, processa texto
-            elif "text" in form and str(form["text"]).strip():
-                text = str(form["text"]).strip()
-
-            else:
-                raise HTTPException(status_code=400, detail="Envie 'file' (multipart) ou 'text'.")
-
-        # --- JSON com {"text": "..."} ---
+        # 2) JSON {"text": "..."}
         elif "application/json" in ct or "text/json" in ct:
             data = await request.json()
             text = (data or {}).get("text", "")
             if not str(text).strip():
                 raise HTTPException(status_code=400, detail="Campo 'text' ausente.")
 
-        # --- texto puro (raro, mas útil p/ testes) ---
+        # 3) text/plain
         elif "text/plain" in ct:
             raw = await request.body()
             text = raw.decode("utf-8", errors="ignore").strip()
             if not text:
                 raise HTTPException(status_code=400, detail="Corpo de texto vazio.")
 
-        # --- fallback: tenta JSON mesmo sem header certo ---
+        # 4) Fallback: tenta JSON mesmo se o header vier estranho
         else:
             try:
                 data = await request.json()
@@ -116,7 +114,7 @@ async def analyze(request: Request):
             except Exception:
                 raise HTTPException(status_code=400, detail="Envie JSON {'text': ...} ou multipart com 'file'.")
 
-        # pré-processa + classifica
+        # --- pré-processa + classifica ---
         processed = preprocess_text(text)
         result = await _run_classifier(processed, text)
         return result
