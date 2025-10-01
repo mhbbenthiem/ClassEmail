@@ -279,55 +279,96 @@ els.btnRemove.addEventListener("click", () => {
         showResult(j); addEntry({...j, ts: now(), filename: f.name}); refreshApiKPIs();
       }catch(e){ showError(); }
     }
-  document.getElementById("btnAnalyze").addEventListener("click", analyze)
-  async function analyze(){
-      const f = fileInput.files[0];
-      const text = $("#emailText").value.trim();
 
-      if(!f && !text){
+    // parse seguro (se a API retornar HTML, não quebra o JSON)
+    async function safeJson(r){
+      try { return await r.json(); }
+      catch { return { detail: (await r.text()).slice(0, 300) }; }
+    }
+
+    document.getElementById("btnAnalyze").addEventListener("click", analyze);
+
+    async function analyze(e){
+      if (e) e.preventDefault();
+
+      const fileInput = document.getElementById("fileInput");
+      const statusRow = document.getElementById("statusRow"); // ajuste o ID se for diferente
+      const text = document.getElementById("emailText").value.trim();
+      const f = fileInput?.files?.[0];
+
+      // 🔒 validações
+      const hasValidFile = !!(f && f instanceof File && f.name && f.size > 0);
+
+      if (!hasValidFile && !text){
         statusRow.innerHTML = '<span class="muted">Cole um texto ou selecione um arquivo.</span>';
         return;
       }
 
-      statusRow.innerHTML = f
+      statusRow.innerHTML = hasValidFile
         ? `<span class="muted">Processando arquivo: ${f.name}…</span>`
         : '<span class="muted">Processando texto…</span>';
 
-      try{
-        let r, j;
+      // UX: trava o botão durante a análise (opcional)
+      const btn = document.getElementById("btnAnalyze");
+      btn?.classList.add("is-loading");
+      btn?.setAttribute("disabled","disabled");
 
-        if (f) {
+      try{
+        let resp, data;
+
+        // 1) Tenta a rota unificada /analyze
+        if (hasValidFile){
           const fd = new FormData();
-          fd.append("file", f);
-          r = await fetch(API + "/analyze", { method:"POST", body: fd });
+          // ⚠️ a chave TEM que ser "file"
+          fd.append("file", f, f.name);
+          resp = await fetch(`${API}/analyze`, { method:"POST", body: fd });
         } else {
-          r = await fetch(API + "/analyze", {
-            method: "POST",
+          resp = await fetch(`${API}/analyze`, {
+            method:"POST",
             headers: {"Content-Type":"application/json"},
             body: JSON.stringify({ text })
           });
         }
 
-        j = await r.json();
-        if(!r.ok) throw new Error(j.detail || "Falha");
+        if (resp.status === 404){
+          // 2) Fallback automático para rotas que já existem
+          if (hasValidFile){
+            const fd = new FormData();
+            fd.append("file", f, f.name);
+            resp = await fetch(`${API}/classify-file`, { method:"POST", body: fd });
+          } else {
+            resp = await fetch(`${API}/classify-text`, {
+              method:"POST",
+              headers: {"Content-Type":"application/json"},
+              body: JSON.stringify({ text })
+            });
+          }
+        }
 
-        // resultado + histórico
-        showResult(j);
-        addEntry({ ...j, ts: now(), filename: f ? f.name : undefined });
-        refreshApiKPIs();
+        data = await safeJson(resp);
+        if (!resp.ok) throw new Error(data.detail || `HTTP ${resp.status}`);
 
-        if (f) {
-          fileInput.value = "";    // limpa o input
-          hideFileBadge();         // esconde o badge com o nome do arquivo
+        // ✅ sucesso → mostra resultado + histórico/KPIs
+        showResult(data);
+        addEntry({ ...data, ts: now(), filename: hasValidFile ? f.name : undefined });
+        refreshApiKPIs?.();
+
+        if (hasValidFile) {
+          // limpa seleção e badge
+          fileInput.value = "";
+          hideFileBadge?.();
           statusRow.innerHTML = '<span class="muted">Concluído. Arquivo removido da seleção.</span>';
         } else {
           statusRow.innerHTML = '<span class="muted">Concluído.</span>';
         }
 
-      }catch(e){
-        // mantém o arquivo caso queira reenviar após erro
-        statusRow.innerHTML = '<span class="muted">Erro ao processar. Tente novamente.</span>';
-        console.warn(e);
+      }catch(err){
+        console.warn("analyze error:", err);
+        statusRow.innerHTML = `<span class="muted">Erro: ${(err && err.message) || "Falha ao processar"}</span>`;
+        // OBS: mantemos o arquivo selecionado para o usuário poder reenviar
+      }finally{
+        btn?.classList.remove("is-loading");
+        btn?.removeAttribute("disabled");
       }
     }
 
