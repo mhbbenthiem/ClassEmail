@@ -1,339 +1,278 @@
+"use strict";
+
+/* ========================== CONFIG & HELPERS ========================== */
 const API = "/api";
-const now = () =>
-  new Date().toLocaleString("pt-BR", { hour12: false });
+const $   = (s) => document.querySelector(s);
+const on  = (id, evt, fn) => { const el = document.getElementById(id); if (el) el.addEventListener(evt, fn); };
+const now = () => new Date().toLocaleString("pt-BR", { hour12: false });
+
 async function safeJson(r){
   try { return await r.json(); }
   catch { return { detail: (await r.text()).slice(0, 300) }; }
 }
 
-async function refreshApiKPIs(){
-  try{
-    // tenta /stats
-    let r = await fetch(`${API}/stats`);
-    if (r.ok) {
-      const j = await r.json();
-      const elTotal = document.querySelector("#sessTotal");
-      const elConf  = document.querySelector("#apiAvg");
-      const elProd  = document.querySelector("#sessProd");
-      const elImpr  = document.querySelector("#sessImprod");
-      if (elTotal) elTotal.textContent = j.total_classifications ?? 0;
-      if (elConf)  elConf.textContent  = (+(j.average_confidence||0)*100).toFixed(1)+"%";
-      if (elProd)  elProd.textContent  = j.productive_count ?? 0;
-      if (elImpr)  elImpr.textContent  = j.unproductive_count ?? 0;
-      return;
-    }
-
-    // fallback: /health (só indica 'ok')
-    r = await fetch(`${API}/health`);
-    if (r.ok) {
-      const elConf = document.querySelector("#apiAvg");
-      if (elConf) elConf.textContent = "OK";
-    }
-  }catch(e){
-    console.warn("refreshApiKPIs:", e);
-  }
+function humanSize(bytes){
+  if (bytes < 1024) return `${bytes} B`;
+  const kb = bytes/1024; if (kb < 1024) return `${Math.round(kb)} KB`;
+  const mb = kb/1024; return `${mb.toFixed(1)} MB`;
+}
+function shortenName(name, max=42){
+  if (name.length <= max) return name;
+  const dot = name.lastIndexOf("."); const ext = dot > -1 ? name.slice(dot) : "";
+  const base = name.slice(0, max - ext.length - 3);
+  return base + "…" + ext;
 }
 
+/* ========================== DOM REFS & STATE ========================== */
+const els = {
+  fileEl:    document.getElementById("fileInput"),
+  fileBadge: document.getElementById("fileBadge"),
+  fileName:  document.getElementById("selectedFileName"),
+  fileMeta:  document.getElementById("selectedFileMeta"),
+  btnRemove: document.getElementById("btnRemoveFile"),
+  btnAnalyze:document.getElementById("btnAnalyze"),
+  btnRestart:document.getElementById("btnRestart"),
+  emailText: document.getElementById("emailText"),
+  statusRow: document.getElementById("statusRow") || document.body,
+  btnCopy:   document.getElementById("btnCopy"),
+};
+let currentFile = null;
 
+/* ========================== FILE BADGE ========================== */
+function showFileBadge(file){
+  if (!els.fileBadge) return;
+  els.fileName.textContent = shortenName(file.name);
+  els.fileMeta.textContent = `• ${humanSize(file.size)}`;
+  els.fileBadge.style.display = "inline-flex";
+}
+function hideFileBadge(){
+  if (!els.fileBadge) return;
+  els.fileBadge.style.display = "none";
+  els.fileName.textContent = "";
+  els.fileMeta.textContent = "";
+}
 function clearFileSelection(){
-  const fileInput = document.getElementById("fileInput");
-  const fileBadge = document.getElementById("fileBadge");
-  if (fileInput) fileInput.value = "";
-  if (fileBadge) fileBadge.style.display = "none";
+  if (els.fileEl) els.fileEl.value = "";
+  currentFile = null;
+  hideFileBadge();
+}
+
+/* quando o usuário escolhe um arquivo */
+els.fileEl?.addEventListener("change", (e) => {
+  const f = e.target.files?.[0];
+  if (f && f.size > 0){
+    const okExt = /\.(txt|pdf)$/i;
+    const okTypes = ["text/plain","application/pdf"];
+    if (!(okExt.test(f.name) || okTypes.includes(f.type))){
+      els.statusRow.innerHTML = '<span class="muted">Formato não suportado: use .txt ou .pdf.</span>';
+      clearFileSelection();
+      return;
+    }
+    currentFile = f;
+    showFileBadge(f);
+    els.statusRow.innerHTML = `<span class="muted">Arquivo selecionado: ${f.name}</span>`;
+  } else {
+    clearFileSelection();
+  }
+});
+
+/* botão “remover” no badge */
+els.btnRemove?.addEventListener("click", () => {
+  clearFileSelection();
+  els.statusRow.innerHTML = '<span class="muted">Arquivo removido. Você pode colar um texto ou escolher outro arquivo.</span>';
+});
+
+/* ========================== API KPIs ========================== */
+async function refreshApiKPIs(){
+  try{
+    let r = await fetch(`${API}/stats`);
+    if (r.ok){
+      const j = await r.json();
+      $("#sessTotal")?.textContent = j.total_classifications ?? 0;
+      $("#apiAvg")?.textContent = `${((+j.average_confidence||0)*100).toFixed(1)}%`;
+      $("#sessProd")?.textContent = j.productive_count ?? 0;
+      $("#sessImprod")?.textContent = j.unproductive_count ?? 0;
+      return;
+    }
+    r = await fetch(`${API}/health`);
+    if (r.ok) $("#apiAvg") && ($("#apiAvg").textContent = "OK");
+  }catch(e){ console.warn("refreshApiKPIs:", e); }
+}
+
+/* ========================== HISTÓRICO & KPIs SESSÃO ========================== */
+const KEY = "ac_history_v3";
+function loadHist(){ try{ return JSON.parse(localStorage.getItem(KEY) || "[]"); }catch{ return []; } }
+function saveHist(list){ localStorage.setItem(KEY, JSON.stringify(list.slice(-200))); }
+function addEntry(j){ const list = loadHist(); list.push(j); saveHist(list); renderHistory(); renderSessionKPIs(); }
+
+function snip(t){ return t && t.length>160 ? t.slice(0,160) + "…" : (t||""); }
+function renderHistory(){
+  const list = loadHist().slice().reverse();
+  const el = $("#history"); if (!el) return;
+  el.innerHTML = "";
+  if (!list.length){ el.innerHTML = '<div class="muted">Nada por aqui ainda.</div>'; return; }
+  list.forEach(it => {
+    const div = document.createElement("div");
+    div.className = "item";
+    div.innerHTML = `
+      <div class="toprow">
+        <div class="left">
+          <span class="badge ${it.category === "Produtivo" ? "ok" : "neutral"}">${it.category}</span>
+          <span class="mono">${(it.confidence*100).toFixed(1)}%</span>
+        </div>
+        <div class="ts">${it.ts || ""}</div>
+      </div>
+      <div class="snip" style="margin-top:6px">${snip(it.original_text)}</div>
+    `;
+    el.appendChild(div);
+  });
+}
+function renderSessionKPIs(){
+  const list = loadHist();
+  const total = list.length;
+  const prod = list.filter(x => x.category === "Produtivo").length;
+  const impr = total - prod;
+  $("#sessTotal") && ($("#sessTotal").textContent = total);
+  $("#sessProd")  && ($("#sessProd").textContent  = prod);
+  $("#sessImprod")&& ($("#sessImprod").textContent= impr);
+  const pct = total ? Math.round((prod/total)*100) : 0;
+  $("#sessBar") && ($("#sessBar").style.width = pct + "%");
+}
+function resetSession(){
+  localStorage.removeItem(KEY);
+  clearFileSelection();
+  renderHistory();
+  renderSessionKPIs();
+  clearResult();
+  els.statusRow.innerHTML = '<span class="muted">Sessão reiniciada.</span>';
+}
+
+/* ========================== RENDER RESULTADO ========================== */
+function clearResult(){
+  $("#statusRow") && ($("#statusRow").innerHTML = '<span class="muted">Aguardando…</span>');
+  $("#catRow")  && ($("#catRow").style.display  = "none");
+  $("#confRow") && ($("#confRow").style.display = "none");
+  $("#respRow") && ($("#respRow").style.display = "none");
+  $("#origRow") && ($("#origRow").style.display = "none");
+}
+function showResult(j){
+  $("#statusRow") && ($("#statusRow").innerHTML = '<span class="muted">Concluído</span>');
+  $("#catRow")  && ($("#catRow").style.display  = "");
+  $("#confRow") && ($("#confRow").style.display = "");
+  $("#respRow") && ($("#respRow").style.display = "");
+  $("#origRow") && ($("#origRow").style.display = "");
+  $("#resp")   && ($("#resp").textContent = j.suggested_response || "");
+  $("#badge")  && ($("#badge").textContent = j.category);
+  $("#badge")  && ($("#badge").classList.remove("ok","neutral"));
+  $("#badge")  && ($("#badge").classList.add(j.category === "Produtivo" ? "ok" : "neutral"));
+  $("#conf")   && ($("#conf").textContent = (j.confidence*100).toFixed(1) + "%");
+  $("#orig")   && ($("#orig").textContent = j.original_text || "");
+}
+function toast(msg){
+  const t = document.getElementById("toast"); if (!t) return;
+  t.textContent = msg; t.classList.add("show");
+  setTimeout(()=>t.classList.remove("show"), 2200);
+}
+function copyResp(){
+  const el = $("#resp"); if (!el) return;
+  const sel = window.getSelection(); const r = document.createRange();
+  r.selectNodeContents(el); sel.removeAllRanges(); sel.addRange(r);
+  document.execCommand("copy"); sel.removeAllRanges();
+  $("#statusRow") && ($("#statusRow").innerHTML = '<span class="muted">Resposta copiada ✓</span>');
+}
+
+/* ========================== ANALYZE UNIFICADO (com fallback) ========================== */
+function setLoading(is){
+  if (!els.btnAnalyze) return;
+  els.btnAnalyze.disabled = is;
+  els.btnAnalyze.classList.toggle("is-loading", is);
+  els.btnAnalyze.innerHTML = is ? '<i class="fas fa-spinner fa-spin"></i> Analisando…'
+                                : '<i class="fas fa-search"></i> Analisar';
 }
 
 async function analyze(e){
   if (e) e.preventDefault();
-  const txtEl  = document.getElementById("emailText");
-  const fileEl = document.getElementById("fileInput");
-  const text   = (txtEl?.value || "").trim();
-  const file   = fileEl?.files?.[0];
 
+  const text = (els.emailText?.value || "").trim();
+  const file = currentFile;
+  const hasFile = !!(file && file instanceof File && file.size > 0);
+
+  if (!hasFile && !text){
+    els.statusRow.innerHTML = '<span class="muted">Cole um texto ou selecione um arquivo.</span>';
+    return;
+  }
+
+  els.statusRow.innerHTML = hasFile
+    ? `<span class="muted">Processando arquivo: ${file.name}…</span>`
+    : '<span class="muted">Processando texto…</span>';
+
+  setLoading(true);
   try{
-    let resp;
-    if (file){
-      const fd = new FormData(); fd.append("file", file);
+    let resp, data;
+
+    // Tenta /analyze
+    if (hasFile){
+      const fd = new FormData();
+      fd.append("file", file, file.name); // CHAVE "file"
+      // debug opcional:
+      // for (const [k,v] of fd.entries()) console.log("FormData:", k, v?.name || v);
       resp = await fetch(`${API}/analyze`, { method:"POST", body: fd });
     } else {
-      if (!text) { alert("Cole um texto ou selecione um arquivo."); return; }
       resp = await fetch(`${API}/analyze`, {
         method:"POST",
-        headers:{ "Content-Type":"application/json" },
+        headers:{"Content-Type":"application/json"},
         body: JSON.stringify({ text })
       });
     }
-    if (resp.status !== 404) { 
-      refreshApiKPIs();
-      const data = await safeJson(resp);
-      if (!resp.ok) throw new Error(data.detail || `HTTP ${resp.status}`);
 
-      showResult(data);
-      addEntry({ ...data, ts: now(), filename: file ? file.name : undefined });
-      return;
-    }
-  }catch(e){
-    
-    if (e?.message && !/HTTP 404|Not Found/i.test(e.message)) throw e;
-  }
-
-  let endpoint, options;
-  if (file){
-    const fd = new FormData(); fd.append("file", file);
-    endpoint = `${API}/classify-file`;
-    options  = { method:"POST", body: fd };
-  } else {
-    endpoint = `${API}/classify-text`;
-    options  = {
-      method:"POST",
-      headers:{ "Content-Type":"application/json" },
-      body: JSON.stringify({ text })
-    };
-  }
-  const r2 = await fetch(endpoint, options);
-  const d2 = await safeJson(r2);
-  if (!r2.ok) throw new Error(d2.detail || `HTTP ${r2.status}`);
-
-  refreshApiKPIs();
-}
-
-
-  const $ = s => document.querySelector(s);
-
-  // helpers
-  function humanSize(bytes){
-    if (bytes < 1024) return `${bytes} B`;
-    const kb = bytes/1024; if (kb < 1024) return `${Math.round(kb)} KB`;
-    const mb = kb/1024; return `${mb.toFixed(1)} MB`;
-  }
-  function shortenName(name, max=42){
-    if (name.length <= max) return name;
-    const dot = name.lastIndexOf(".");
-    const ext = dot > -1 ? name.slice(dot) : "";
-    const base = name.slice(0, max - ext.length - 3);
-    return base + "…" + ext;
-  }
-  function showFileBadge(file){
-    els.fileName.textContent = shortenName(file.name);
-    els.fileMeta.textContent = `• ${humanSize(file.size)}`;
-    els.fileBadge.style.display = "inline-flex";
-  }
-  function hideFileBadge(){
-    els.fileBadge.style.display = "none";
-    els.fileName.textContent = "";
-    els.fileMeta.textContent = "";
-  }
-
-  // on change → mostra badge
-  els.fileInput.addEventListener("change", () => {
-    const f = els.fileInput.files && els.fileInput.files[0];
-    if (!f){ hideFileBadge(); return; }
-
-    // valida extensão/tipo básico
-    const okExt = /\.(txt|pdf)$/i;
-    const okTypes = ["text/plain","application/pdf"];
-    if (!(okExt.test(f.name) || okTypes.includes(f.type))) {
-      if (els.statusRow) els.statusRow.innerHTML = '<span class="muted">Formato não suportado: use .txt ou .pdf.</span>';
-      els.fileInput.value = "";
-      hideFileBadge();
-      return;
-    }
-
-    showFileBadge(f);
-    if (els.statusRow) els.statusRow.innerHTML = '<span class="muted">Arquivo selecionado. Clique em “Analisar”.</span>';
-  });
-
-// botão “Remover” → limpa input e esconde badge
-els.btnRemove.addEventListener("click", () => {
-  els.fileInput.value = "";
-  hideFileBadge();
-  if (els.statusRow) els.statusRow.innerHTML = '<span class="muted">Arquivo removido. Você pode colar um texto ou escolher outro arquivo.</span>';
-});
-
-
-    // Session history
-    const KEY = "ac_history_v3"; 
-    function loadHist(){ try{ return JSON.parse(localStorage.getItem(KEY) || "[]"); }catch(e){ return []; } }
-    function saveHist(list){ localStorage.setItem(KEY, JSON.stringify(list.slice(-200))); }
-    function addEntry(j){ const list = loadHist(); list.push(j); saveHist(list); renderHistory(); renderSessionKPIs(); }
-    function resetSession(){
-      localStorage.removeItem(KEY);            // limpa histórico da sessão
-      try { fileInput.value = ""; } catch(e){} // limpa input de arquivo (se existir)
-      if (typeof hideFileBadge === "function") hideFileBadge(); // esconde o “arquivo selecionado”
-      renderHistory();
-      renderSessionKPIs();
-      clearResult();
-      document.getElementById("statusRow").innerHTML =
-        '<span class="muted">Sessão reiniciada.</span>';
-    }
-    function setLoading(is){ 
-      const btn = document.getElementById("btnAnalyze");
-      btn.disabled = is; btn.textContent = is ? "Analisando…" : "Analisar";
-      btn.classList.toggle("is-loading", is);
-    }
-    async function analyze(){ 
-      // ...
-      setLoading(true);
-      try { /* fetch */ } finally { setLoading(false); }
-    }
-
-
-    function snip(t){ return t && t.length>160 ? t.slice(0,160) + "…" : (t||""); }
-    function renderHistory(){
-      const list = loadHist().slice().reverse();
-      const el = $("#history"); el.innerHTML = "";
-      if(!list.length){ el.innerHTML = '<div class="muted">Nada por aqui ainda.</div>'; return; }
-      list.forEach(it => {
-        const div = document.createElement("div");
-        div.className = "item";
-        div.innerHTML = `
-          <div class="toprow">
-            <div class="left">
-              <span class="badge ${it.category === "Produtivo" ? "ok":"neutral"}">${it.category}</span>
-              <span class="mono">${(it.confidence*100).toFixed(1)}%</span>
-            </div>
-            <div class="ts">${it.ts || ""}</div>
-          </div>
-          <div class="snip" style="margin-top:6px">${snip(it.original_text)}</div>
-        `;
-        el.appendChild(div);
-      });
-    }
-
-    function renderSessionKPIs(){
-      const list = loadHist();
-      const total = list.length;
-      const prod = list.filter(x => x.category === "Produtivo").length;
-      const impr = list.filter(x => x.category !== "Produtivo").length;
-      $("#sessTotal").textContent = total;
-      $("#sessProd").textContent = prod;
-      $("#sessImprod").textContent = impr;
-      const pct = total ? Math.round((prod/total)*100) : 0;
-      $("#sessBar").style.width = pct + "%";
-    }
-    function exportCSV(){
-      const list = loadHist();
-      const rows = [["ts","categoria","confiança","arquivo","texto","sugerida"]]
-        .concat(list.map(x=>[x.ts,x.category,x.confidence,x.filename||"",x.original_text||"",x.suggested_response||""]));
-      const csv = rows.map(r=>r.map(v=>`"${String(v).replace(/"/g,'""')}"`).join(",")).join("\n");
-      const a = document.createElement("a");
-      a.href = URL.createObjectURL(new Blob([csv],{type:"text/csv"})); a.download = "historico.csv"; a.click();
-    }
-
-
-    function clearResult(){
-      $("#statusRow").innerHTML = '<span class="muted">Aguardando…</span>';
-      $("#catRow").style.display = "none";
-      $("#confRow").style.display = "none";
-      $("#origRow").style.display = "none";
-    }
-    function showResult(j){
-      $("#statusRow").innerHTML = '<span class="muted">Concluído</span>';
-      $("#catRow").style.display = ""; $("#confRow").style.display = ""; $("#respRow").style.display = ""; $("#origRow").style.display = "";
-      $("#resp").textContent = j.suggested_response || "";
-      $("#badge").textContent = j.category;
-      $("#badge").className = "badge " + (j.category === "Produtivo" ? "ok" : "neutral");
-      $("#conf").textContent = (j.confidence*100).toFixed(1) + "%";
-      $("#orig").textContent = j.original_text;
-    }
-    function toast(msg){ const t = document.getElementById("toast"); t.textContent=msg; t.classList.add("show");
-      setTimeout(()=>t.classList.remove("show"), 2200); }
-    document.addEventListener("keydown", (e)=>{
-      if((e.ctrlKey||e.metaKey) && e.key==="Enter") analyze();
-      if(e.key==="Escape") { fileInput.value=""; hideFileBadge(); }
-    });
-
-    function copyResp(){
-    const sel = window.getSelection(); const r = document.createRange();
-    r.selectNodeContents($("#resp")); sel.removeAllRanges(); sel.addRange(r);
-    document.execCommand("copy"); sel.removeAllRanges();
-    $("#statusRow").innerHTML = '<span class="muted">Resposta copiada ✓</span>';
-  }
-  document.getElementById("btnCopy").addEventListener("click", copyResp);
-    function showError(){ $("#statusRow").innerHTML = '<span class="muted">Erro ao processar. Tente novamente.</span>'; }
-
-    async function classifyText(){
-      const text = $("#emailText").value.trim(); if(!text) return;
-      $("#statusRow").innerHTML = '<span class="muted">Processando…</span>';
-      try{
-        const r = await fetch(API + "/classify-text", {method:"POST", headers:{"Content-Type":"application/json"}, body:JSON.stringify({text})});
-        const j = await r.json(); if(!r.ok) throw new Error(j.detail || "Falha");
-        showResult(j); addEntry({...j, ts: now()}); refreshApiKPIs();
-      }catch(e){ showError(); }
-    }
-    async function classifyFile(){
-      const f = $("#fileInput").files[0]; if(!f) return;
-      $("#statusRow").innerHTML = '<span class="muted">Enviando…</span>';
-      try{
-        const fd = new FormData(); fd.append("file", f);
-        const r = await fetch(API + "/classify-file", {method:"POST", body:fd});
-        const j = await r.json(); if(!r.ok) throw new Error(j.detail || "Falha");
-        showResult(j); addEntry({...j, ts: now(), filename: f.name}); refreshApiKPIs();
-      }catch(e){ showError(); }
-    }
-
-    // parse seguro (se a API retornar HTML, não quebra o JSON)
-    async function safeJson(r){
-      try { return await r.json(); }
-      catch { return { detail: (await r.text()).slice(0, 300) }; }
-    }
-
-    document.getElementById("btnAnalyze").addEventListener("click", analyze);
-
-    const els = {
-      fileEl: document.getElementById("fileInput"),
-      fileBadge: document.getElementById("fileBadge"),
-      fileName: document.getElementById("selectedFileName"),
-      fileMeta: document.getElementById("selectedFileMeta"),
-      btnRemove: document.getElementById("btnRemoveFile"),
-    };
-
-    let currentFile = null;
-
-    els.fileEl.addEventListener("change", e => {
-      const f = e.target.files?.[0];
-      if (f && f.size > 0) {
-        currentFile = f; // ← aqui você mantém a referência real ao File
-        els.fileName.textContent = f.name;
-        els.fileMeta.textContent = `(${(f.size/1024).toFixed(1)} KB)`;
-        els.fileBadge.style.display = "inline-flex";
+    // Fallback se /analyze não existir
+    if (resp.status === 404){
+      if (hasFile){
+        const fd = new FormData(); fd.append("file", file, file.name);
+        resp = await fetch(`${API}/classify-file`, { method:"POST", body: fd });
       } else {
-        currentFile = null;
-        els.fileBadge.style.display = "none";
-      }
-    });
-
-    els.btnRemove.addEventListener("click", () => {
-      els.fileEl.value = ""; // limpa o input (e remove o File)
-      currentFile = null;    // limpa sua referência
-      els.fileBadge.style.display = "none";
-    });
-
-    async function analyze() {
-      const text = document.getElementById("emailText").value.trim();
-      const file = currentFile; // usa o File guardado
-
-      if (file) {
-        const fd = new FormData();
-        fd.append("file", file, file.name);
-        await fetch("/api/analyze", { method: "POST", body: fd });
-      } else {
-        await fetch("/api/analyze", {
-          method: "POST",
-          headers: { "Content-Type":"application/json" },
+        resp = await fetch(`${API}/classify-text`, {
+          method:"POST",
+          headers:{"Content-Type":"application/json"},
           body: JSON.stringify({ text })
         });
       }
     }
 
+    data = await safeJson(resp);
+    if (!resp.ok) throw new Error(data.detail || `HTTP ${resp.status}`);
 
-  renderHistory(); renderSessionKPIs(); refreshApiKPIs();
+    // sucesso
+    showResult(data);
+    addEntry({ ...data, ts: now(), filename: hasFile ? file.name : undefined });
+    await refreshApiKPIs();
 
-  // helper seguro: só adiciona evento se o elemento existir
-  function on(id, evt, fn){
-    const el = document.getElementById(id);
-    if (el) el.addEventListener(evt, fn);
+    if (hasFile){
+      clearFileSelection();
+      els.statusRow.innerHTML = '<span class="muted">Concluído. Arquivo removido da seleção.</span>';
+    } else {
+      els.statusRow.innerHTML = '<span class="muted">Concluído.</span>';
+    }
+
+  }catch(err){
+    console.warn("analyze error:", err);
+    els.statusRow.innerHTML = `<span class="muted">Erro: ${(err && err.message) || "Falha ao processar"}</span>`;
+  }finally{
+    setLoading(false);
   }
-  on("btnAnalyze", "click", analyze);
-  on("btnRestart","click", () => {
-    if (confirm("Limpar histórico desta sessão?")) resetSession();
-  });
+}
+
+/* ========================== WIRES ========================== */
+on("btnAnalyze","click", analyze);
+on("btnRestart","click", () => { if (confirm("Limpar histórico desta sessão?")) resetSession(); });
+on("btnCopy",  "click",  copyResp);
+document.addEventListener("keydown", (e)=>{
+  if((e.ctrlKey||e.metaKey) && e.key==="Enter") analyze();
+  if(e.key==="Escape") { clearFileSelection(); }
+});
+
+/* ========================== BOOT ========================== */
+renderHistory();
+renderSessionKPIs();
+refreshApiKPIs();
+clearResult();
