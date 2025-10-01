@@ -77,9 +77,8 @@ els.fileEl?.addEventListener("change", (e) => {
 /* botão “remover” no badge */
 els.btnRemove?.addEventListener("click", (e) => {
   e.preventDefault();
-  e.stopPropagation();
   clearFileSelection();
-  els.statusRow.innerHTML = '<span class="muted">Arquivo removido. Você pode colar um texto ou escolher outro arquivo.</span>';
+  els.statusRow.innerHTML = '<span class="muted">Arquivo removido da seleção.</span>';
 });
 
 /* ========================== API KPIs ========================== */
@@ -94,8 +93,11 @@ async function refreshApiKPIs(){
       $("#sessImprod")?.textContent = j.unproductive_count ?? 0;
       return;
     }
+    // fallback simples de saúde
     r = await fetch(`${API}/health`);
-    if (r.ok) $("#apiAvg") && ($("#apiAvg").textContent = "OK");
+    if (r.ok){
+      if ($("#apiAvg")) $("#apiAvg").textContent = "OK";
+    }
   }catch(e){ console.warn("refreshApiKPIs:", e); }
 }
 
@@ -132,12 +134,13 @@ function renderSessionKPIs(){
   const total = list.length;
   const prod = list.filter(x => x.category === "Produtivo").length;
   const impr = total - prod;
-  $("#sessTotal") && ($("#sessTotal").textContent = total);
-  $("#sessProd")  && ($("#sessProd").textContent  = prod);
-  $("#sessImprod")&& ($("#sessImprod").textContent= impr);
-  const pct = total ? Math.round((prod/total)*100) : 0;
-  $("#sessBar") && ($("#sessBar").style.width = pct + "%");
+  if ($("#sessTotal")) $("#sessTotal").textContent = total;
+  if ($("#sessProd"))  $("#sessProd").textContent  = prod;
+  if ($("#sessImprod"))$("#sessImprod").textContent= impr;
+  // (métrica adicional, se quiser exibir em algum lugar)
+  // const pct = total ? Math.round((prod/total)*100) : 0;
 }
+
 function resetSession(){
   localStorage.removeItem(KEY);
   clearFileSelection();
@@ -149,36 +152,47 @@ function resetSession(){
 
 /* ========================== RENDER RESULTADO ========================== */
 function clearResult(){
-  $("#statusRow") && ($("#statusRow").innerHTML = '<span class="muted">Aguardando…</span>');
-  $("#catRow")  && ($("#catRow").style.display  = "none");
-  $("#confRow") && ($("#confRow").style.display = "none");
-  $("#respRow") && ($("#respRow").style.display = "none");
-  $("#origRow") && ($("#origRow").style.display = "none");
+  if ($("#statusRow")) $("#statusRow").innerHTML = '<span class="muted">Aguardando…</span>';
+  if ($("#catRow"))   $("#catRow").style.display  = "none";
+  if ($("#confRow"))  $("#confRow").style.display = "none";
+  if ($("#respRow"))  $("#respRow").style.display = "none";
+  if ($("#origRow"))  $("#origRow").style.display = "none";
 }
 function showResult(j){
-  $("#statusRow") && ($("#statusRow").innerHTML = '<span class="muted">Concluído</span>');
-  $("#catRow")  && ($("#catRow").style.display  = "");
-  $("#confRow") && ($("#confRow").style.display = "");
-  $("#respRow") && ($("#respRow").style.display = "");
-  $("#origRow") && ($("#origRow").style.display = "");
-  $("#resp")   && ($("#resp").textContent = j.suggested_response || "");
-  $("#badge")  && ($("#badge").textContent = j.category);
-  $("#badge")  && ($("#badge").classList.remove("ok","neutral"));
-  $("#badge")  && ($("#badge").classList.add(j.category === "Produtivo" ? "ok" : "neutral"));
-  $("#conf")   && ($("#conf").textContent = (j.confidence*100).toFixed(1) + "%");
-  $("#orig")   && ($("#orig").textContent = j.original_text || "");
+  if ($("#statusRow")) $("#statusRow").innerHTML = '<span class="muted">Concluído</span>';
+  if ($("#catRow"))   $("#catRow").style.display  = "";
+  if ($("#confRow"))  $("#confRow").style.display = "";
+  if ($("#respRow"))  $("#respRow").style.display = "";
+  if ($("#origRow"))  $("#origRow").style.display = "";
+  if ($("#resp"))   $("#resp").textContent = j.suggested_response || "";
+  if ($("#badge")){
+    $("#badge").textContent = j.category;
+    $("#badge").classList.remove("ok","neutral");
+    $("#badge").classList.add(j.category === "Produtivo" ? "ok" : "neutral");
+  }
+  if ($("#conf"))   $("#conf").textContent = (j.confidence*100).toFixed(1) + "%";
+  if ($("#orig"))   $("#orig").textContent = j.original_text || "";
 }
 function toast(msg){
   const t = document.getElementById("toast"); if (!t) return;
   t.textContent = msg; t.classList.add("show");
   setTimeout(()=>t.classList.remove("show"), 2200);
 }
-function copyResp(){
+
+/* copiar resposta — com API moderna + fallback */
+async function copyResp(){
   const el = $("#resp"); if (!el) return;
-  const sel = window.getSelection(); const r = document.createRange();
-  r.selectNodeContents(el); sel.removeAllRanges(); sel.addRange(r);
-  document.execCommand("copy"); sel.removeAllRanges();
-  $("#statusRow") && ($("#statusRow").innerHTML = '<span class="muted">Resposta copiada ✓</span>');
+  const text = el.textContent || "";
+  try{
+    await navigator.clipboard.writeText(text);
+    if ($("#statusRow")) $("#statusRow").innerHTML = '<span class="muted">Resposta copiada ✓</span>';
+  }catch{
+    // fallback legado
+    const sel = window.getSelection(); const r = document.createRange();
+    r.selectNodeContents(el); sel.removeAllRanges(); sel.addRange(r);
+    document.execCommand("copy"); sel.removeAllRanges();
+    if ($("#statusRow")) $("#statusRow").innerHTML = '<span class="muted">Resposta copiada (fallback) ✓</span>';
+  }
 }
 
 /* ========================== ANALYZE (com fallback) ========================== */
@@ -193,8 +207,8 @@ function setLoading(is){
 async function analyze(e){
   if (e) e.preventDefault();
 
+  const file = currentFile;
   const text = (els.emailText?.value || "").trim();
-  const file = (currentFile && currentFile.size > 0) ? currentFile : els.fileEl?.files?.[0];
   const hasFile = !!(file && file.size > 0);
 
   if (!hasFile && !text){
@@ -226,10 +240,11 @@ async function analyze(e){
     // Fallback se /analyze não existir
     if (resp.status === 404){
       if (hasFile){
-        const fd = new FormData(); fd.append("file", file, file.name);
-        resp = await fetch(`${API}/classify-file`, { method:"POST", body: fd });
+        const fd2 = new FormData();
+        fd2.append("file", file, file.name);
+        resp = await fetch(`${API}/classify`, { method:"POST", body: fd2 });
       } else {
-        resp = await fetch(`${API}/classify-text`, {
+        resp = await fetch(`${API}/classify`, {
           method:"POST",
           headers:{"Content-Type":"application/json"},
           body: JSON.stringify({ text })
