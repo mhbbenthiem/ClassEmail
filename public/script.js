@@ -39,48 +39,55 @@ const els = {
 let currentFile = null;
 
 /* ========================== FILE BADGE ========================== */
-function showFileBadge(file){
-  if (!els.fileBadge) return;
-  els.fileName.textContent = shortenName(file.name);
-  els.fileMeta.textContent = `• ${humanSize(file.size)}`;
-  els.fileBadge.style.display = "inline-flex";
-}
-function hideFileBadge(){
-  if (!els.fileBadge) return;
-  els.fileBadge.style.display = "none";
-  els.fileName.textContent = "";
-  els.fileMeta.textContent = "";
-}
-function clearFileSelection(){
-  if (els.fileEl) els.fileEl.value = "";
-  currentFile = null;
-  hideFileBadge();
-}
+document.addEventListener("DOMContentLoaded", () => {
+  const fileInput = document.getElementById("fileInput");          // <input ... id="fileInput" name="file">
+  const fileBadge = document.getElementById("fileBadge");          // <div id="fileBadge">
+  const nameSpan  = document.getElementById("selectedFileName");   // <span id="selectedFileName">
+  const metaSpan  = document.getElementById("selectedFileMeta");   // <span id="selectedFileMeta">
+  const btnRemove = document.getElementById("btnRemoveFile");      // <button id="btnRemoveFile">
 
-/* quando o usuário escolhe um arquivo */
-els.fileEl?.addEventListener("change", (e) => {
-  const f = e.target.files?.[0];
-  if (f && f.size > 0){
-    const okExt = /\.(txt|pdf)$/i;
-    const okTypes = ["text/plain","application/pdf"];
-    if (!(okExt.test(f.name) || okTypes.includes(f.type))){
-      els.statusRow.innerHTML = '<span class="muted">Formato não suportado: use .txt ou .pdf.</span>';
-      clearFileSelection();
-      return;
-    }
-    currentFile = f;
-    showFileBadge(f);
-    els.statusRow.innerHTML = `<span class="muted">Arquivo selecionado: ${f.name}</span>`;
-  } else {
-    clearFileSelection();
+  if (!fileInput || !fileBadge || !nameSpan || !metaSpan || !btnRemove) {
+    console.warn("Badge: faltam elementos com os IDs esperados.");
+    return;
   }
+
+  function humanSize(bytes){
+    if (bytes < 1024) return `${bytes} B`;
+    const kb = bytes/1024; if (kb < 1024) return `${Math.round(kb)} KB`;
+    const mb = kb/1024; return `${mb.toFixed(1)} MB`;
+  }
+
+  function showFileBadge(file){
+    nameSpan.textContent = file.name;
+    metaSpan.textContent = `• ${humanSize(file.size)}`;
+    fileBadge.style.display = "inline-flex"; // <- tira o display:none
+  }
+
+  function hideFileBadge(){
+    fileInput.value = "";                     // limpa o input
+    fileBadge.style.display = "none";         // esconde o badge
+    nameSpan.textContent = "";
+    metaSpan.textContent = "";
+  }
+
+  fileInput.addEventListener("change", (e) => {
+    const f = e.target.files && e.target.files[0];
+    if (f && f.size > 0) {
+      showFileBadge(f);
+    } else {
+      hideFileBadge();
+    }
+  });
+
+  btnRemove.addEventListener("click", (e) => {
+    e.preventDefault();
+    e.stopPropagation(); // garante que não abre o seletor de arquivo
+    hideFileBadge();
+  });
+
+  // se quiser: após análise bem-sucedida, chame hideFileBadge();
 });
 
-/* botão “remover” no badge */
-els.btnRemove?.addEventListener("click", () => {
-  clearFileSelection();
-  els.statusRow.innerHTML = '<span class="muted">Arquivo removido. Você pode colar um texto ou escolher outro arquivo.</span>';
-});
 
 /* ========================== API KPIs ========================== */
 async function refreshApiKPIs(){
