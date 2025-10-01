@@ -63,27 +63,68 @@ async def classify_file(file: UploadFile = File(...)):
     processed = preprocess_text(text)
     return await _run_classifier(processed, text)
 
-
 @app.post("/analyze")
 async def analyze(request: Request):
-    ct = request.headers.get("content-type","") or ""
+    ct = (request.headers.get("content-type") or "").lower()
     try:
-        if ct.startswith("multipart/form-data"):
+        # --- multipart: arquivo OU texto no form ---
+        if "multipart/form-data" in ct:
             form = await request.form()
+
+            # debug: ver o que realmente chegou
+            try:
+                logger.info(f"/analyze multipart keys: {list(form.keys())}")
+            except Exception:
+                pass
+
             up = form.get("file")
-            if not isinstance(up, UploadFile):
-                raise HTTPException(status_code=400, detail="Campo 'file' ausente.")
-            content = await up.read()
-            text = extract_text_from_file(content, up.filename)
-        else:
+
+            if isinstance(up, UploadFile) and getattr(up, "filename", ""):
+                content = await up.read()
+                if len(content) > 4 * 1024 * 1024:
+                    raise HTTPException(status_code=413, detail="Arquivo muito grande (máx 4 MB).")
+                text = extract_text_from_file(content, up.filename)
+
+            # se não houver 'file', mas vier 'text' no form, processa texto
+            elif "text" in form and str(form["text"]).strip():
+                text = str(form["text"]).strip()
+
+            else:
+                raise HTTPException(status_code=400, detail="Envie 'file' (multipart) ou 'text'.")
+
+        # --- JSON com {"text": "..."} ---
+        elif "application/json" in ct or "text/json" in ct:
             data = await request.json()
-            text = (data or {}).get("text","")
-            if not text.strip():
+            text = (data or {}).get("text", "")
+            if not str(text).strip():
                 raise HTTPException(status_code=400, detail="Campo 'text' ausente.")
+
+        # --- texto puro (raro, mas útil p/ testes) ---
+        elif "text/plain" in ct:
+            raw = await request.body()
+            text = raw.decode("utf-8", errors="ignore").strip()
+            if not text:
+                raise HTTPException(status_code=400, detail="Corpo de texto vazio.")
+
+        # --- fallback: tenta JSON mesmo sem header certo ---
+        else:
+            try:
+                data = await request.json()
+                text = (data or {}).get("text", "")
+                if not str(text).strip():
+                    raise HTTPException(status_code=400, detail="Envie JSON {'text': ...} ou multipart com 'file'.")
+            except Exception:
+                raise HTTPException(status_code=400, detail="Envie JSON {'text': ...} ou multipart com 'file'.")
+
+        # pré-processa + classifica
         processed = preprocess_text(text)
-        return await _run_classifier(processed, text)
+        result = await _run_classifier(processed, text)
+        return result
+
     except ValueError as e:
+        # Ex.: PDF sem texto extraível
         raise HTTPException(status_code=400, detail=str(e))
+    
 @app.get("/stats")
 async def stats():
     return {
