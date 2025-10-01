@@ -82,24 +82,36 @@ els.btnRemove?.addEventListener("click", (e) => {
 });
 
 /* ========================== API KPIs ========================== */
+/* ========================== API KPIs ========================== */
 async function refreshApiKPIs(){
   try{
     let r = await fetch(`${API}/stats`);
     if (r.ok){
       const j = await r.json();
-      $("#sessTotal")?.textContent = j.total_classifications ?? 0;
-      $("#apiAvg")?.textContent = `${((+j.average_confidence||0)*100).toFixed(1)}%`;
-      $("#sessProd")?.textContent = j.productive_count ?? 0;
-      $("#sessImprod")?.textContent = j.unproductive_count ?? 0;
+
+      var elTotal = $("#sessTotal");
+      if (elTotal) elTotal.textContent = (j.total_classifications != null ? j.total_classifications : 0);
+
+      var elAvg = $("#apiAvg");
+      if (elAvg) elAvg.textContent = (((+j.average_confidence || 0) * 100).toFixed(1)) + "%";
+
+      var elProd = $("#sessProd");
+      if (elProd) elProd.textContent = (j.productive_count != null ? j.productive_count : 0);
+
+      var elImprod = $("#sessImprod");
+      if (elImprod) elImprod.textContent = (j.unproductive_count != null ? j.unproductive_count : 0);
+
       return;
     }
     // fallback simples de saúde
     r = await fetch(`${API}/health`);
     if (r.ok){
-      if ($("#apiAvg")) $("#apiAvg").textContent = "OK";
+      var elAvg2 = $("#apiAvg");
+      if (elAvg2) elAvg2.textContent = "OK";
     }
   }catch(e){ console.warn("refreshApiKPIs:", e); }
 }
+
 
 /* ========================== HISTÓRICO & KPIs SESSÃO ========================== */
 const KEY = "ac_history_v3";
