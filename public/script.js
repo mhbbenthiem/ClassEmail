@@ -98,15 +98,6 @@ async function analyze(e){
 
 
   const $ = s => document.querySelector(s);
-  const els = {
-    fileInput: $("#fileInput"),
-    fileBadge: $("#fileBadge"),
-    fileName:  $("#selectedFileName"),
-    fileMeta:  $("#selectedFileMeta"),
-    btnRemove: $("#btnRemoveFile"),
-    btnAnalyze: $("#btnAnalyze"),
-    statusRow: $("#statusRow"), 
-  };
 
   // helpers
   function humanSize(bytes){
@@ -288,89 +279,52 @@ els.btnRemove.addEventListener("click", () => {
 
     document.getElementById("btnAnalyze").addEventListener("click", analyze);
 
-    async function analyze(e){
-      if (e) e.preventDefault();
+    const els = {
+      fileEl: document.getElementById("fileInput"),
+      fileBadge: document.getElementById("fileBadge"),
+      fileName: document.getElementById("selectedFileName"),
+      fileMeta: document.getElementById("selectedFileMeta"),
+      btnRemove: document.getElementById("btnRemoveFile"),
+    };
 
-      const fileInput = document.getElementById("selectedFile");
-      const statusRow = document.getElementById("statusRow"); 
-      const text = document.getElementById("emailText").value.trim();
-      const f = fileInput?.files?.[0];
+    let currentFile = null;
 
-      // 🔒 validações
-      const hasValidFile = !!(f && f instanceof File && f.name && f.size > 0);
-
-      if (!hasValidFile && !text){
-        statusRow.innerHTML = '<span class="muted">Cole um texto ou selecione um arquivo.</span>';
-        return;
+    els.fileEl.addEventListener("change", e => {
+      const f = e.target.files?.[0];
+      if (f && f.size > 0) {
+        currentFile = f; // ← aqui você mantém a referência real ao File
+        els.fileName.textContent = f.name;
+        els.fileMeta.textContent = `(${(f.size/1024).toFixed(1)} KB)`;
+        els.fileBadge.style.display = "inline-flex";
+      } else {
+        currentFile = null;
+        els.fileBadge.style.display = "none";
       }
+    });
 
-      statusRow.innerHTML = hasValidFile
-        ? `<span class="muted">Processando arquivo: ${f.name}…</span>`
-        : '<span class="muted">Processando texto…</span>';
+    els.btnRemove.addEventListener("click", () => {
+      els.fileEl.value = ""; // limpa o input (e remove o File)
+      currentFile = null;    // limpa sua referência
+      els.fileBadge.style.display = "none";
+    });
 
-      // UX: trava o botão durante a análise (opcional)
-      const btn = document.getElementById("btnAnalyze");
-      btn?.classList.add("is-loading");
-      btn?.setAttribute("disabled","disabled");
+    async function analyze() {
+      const text = document.getElementById("emailText").value.trim();
+      const file = currentFile; // usa o File guardado
 
-      try{
-        let resp, data;
-
-        // 1) Tenta a rota unificada /analyze
-        if (hasValidFile){
-          const fd = new FormData();
-          // ⚠️ a chave TEM que ser "file"
-          fd.append("file", f, f.name);
-          resp = await fetch(`${API}/analyze`, { method:"POST", body: fd });
-        } else {
-          resp = await fetch(`${API}/analyze`, {
-            method:"POST",
-            headers: {"Content-Type":"application/json"},
-            body: JSON.stringify({ text })
-          });
-        }
-
-        if (resp.status === 404){
-          // 2) Fallback automático para rotas que já existem
-          if (hasValidFile){
-            const fd = new FormData();
-            fd.append("file", f, f.name);
-            resp = await fetch(`${API}/classify-file`, { method:"POST", body: fd });
-          } else {
-            resp = await fetch(`${API}/classify-text`, {
-              method:"POST",
-              headers: {"Content-Type":"application/json"},
-              body: JSON.stringify({ text })
-            });
-          }
-        }
-
-        data = await safeJson(resp);
-        if (!resp.ok) throw new Error(data.detail || `HTTP ${resp.status}`);
-
-        // ✅ sucesso → mostra resultado + histórico/KPIs
-        showResult(data);
-        addEntry({ ...data, ts: now(), filename: hasValidFile ? f.name : undefined });
-        refreshApiKPIs?.();
-
-        if (hasValidFile) {
-          // limpa seleção e badge
-          fileInput.value = "";
-          hideFileBadge?.();
-          statusRow.innerHTML = '<span class="muted">Concluído. Arquivo removido da seleção.</span>';
-        } else {
-          statusRow.innerHTML = '<span class="muted">Concluído.</span>';
-        }
-
-      }catch(err){
-        console.warn("analyze error:", err);
-        statusRow.innerHTML = `<span class="muted">Erro: ${(err && err.message) || "Falha ao processar"}</span>`;
-        // OBS: mantemos o arquivo selecionado para o usuário poder reenviar
-      }finally{
-        btn?.classList.remove("is-loading");
-        btn?.removeAttribute("disabled");
+      if (file) {
+        const fd = new FormData();
+        fd.append("file", file, file.name);
+        await fetch("/api/analyze", { method: "POST", body: fd });
+      } else {
+        await fetch("/api/analyze", {
+          method: "POST",
+          headers: { "Content-Type":"application/json" },
+          body: JSON.stringify({ text })
+        });
       }
     }
+
 
   renderHistory(); renderSessionKPIs(); refreshApiKPIs();
 
