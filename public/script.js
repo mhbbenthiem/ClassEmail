@@ -291,7 +291,7 @@ els.btnRemove.addEventListener("click", () => {
     async function analyze(e){
       if (e) e.preventDefault();
 
-      const fileInput = document.getElementById("selectedFileName");
+      const fileInput = document.getElementById("selectedFile");
       const statusRow = document.getElementById("statusRow"); 
       const text = document.getElementById("emailText").value.trim();
       const f = fileInput?.files?.[0];
